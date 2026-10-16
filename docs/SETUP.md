@@ -33,7 +33,7 @@ One hour with the firm. Settle:
   knowing the staff will lose the app on it.
 - [ ] **Which messages may send without approval** from day one. Recommended: none for the first
   week of each agent.
-- [ ] **Hourly rate and staff costs** — put them into the [savings calculator](index.html).
+- [ ] **Hourly rate and staff costs** — put them into the [savings calculator](https://chedevs1111.github.io/bbcm-agents/).
 - [ ] **The festive period** for each deadline rule (see §9).
 - [ ] **Accounting package**, if any. v1 drafts fee notes in the register's Invoices tab; the
   firm copies them into its accounting package.
