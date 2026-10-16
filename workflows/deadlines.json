@@ -1,0 +1,523 @@
+{
+  "name": "Deadlines",
+  "nodes": [
+    {
+      "id": "95b56d12-5dda-db2a-3af8-7a45f9f71206",
+      "name": "When called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "d9664f32-98b1-0464-a210-d185b6938747",
+      "name": "Understand note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1024, system: \"Extract a legal deadline from a South African attorney's note. Dates are day-first. Reply with JSON only: {\\\"matterId\\\": string|null, \\\"event\\\": string, \\\"triggerDate\\\": \\\"YYYY-MM-DD\\\"|null, \\\"ruleKey\\\": \\\"notice_of_intention_to_defend\\\"|\\\"prescription_debt\\\"|null, \\\"courtDays\\\": number|null, \\\"calendarDays\\\": number|null}.\", messages: [{ role: 'user', content: String($('When called').first().json.note) }] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM Anthropic"
+        }
+      }
+    },
+    {
+      "id": "0b311fe6-b03e-edda-ee7f-49f407f389b7",
+      "name": "Compute deadline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/**\n * South African deadline arithmetic.\n *\n * Self-contained on purpose — no imports — because the Deadlines and Billing\n * workflows inline this exact source into an n8n Code node. The code the tests\n * check is the code the agents run.\n *\n * Dates are ISO strings (YYYY-MM-DD) and all arithmetic is done in UTC, so no\n * timezone can shift a deadline by a day. Anything unparseable throws RangeError:\n * a deadline is never guessed.\n */\n\nconst DAY = 86_400_000;\n\n// Public Holidays Act 36 of 1994, fixed-date holidays (month-day).\nconst FIXED_HOLIDAYS = [\n  '01-01', '03-21', '04-27', '05-01', '06-16', '08-09', '09-24', '12-16', '12-25', '12-26',\n];\n\nfunction parseIso(iso) {\n  if (typeof iso !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(iso)) {\n    throw new RangeError(`Invalid date: ${iso}`);\n  }\n  const [y, m, d] = iso.split('-').map(Number);\n  const t = Date.UTC(y, m - 1, d);\n  const check = new Date(t);\n  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) {\n    throw new RangeError(`Invalid date: ${iso}`);\n  }\n  return t;\n}\n\nfunction toIso(t) {\n  return new Date(t).toISOString().slice(0, 10);\n}\n\nfunction weekday(t) {\n  return new Date(t).getUTCDay();\n}\n\nfunction requireCount(n) {\n  if (!Number.isInteger(n) || n < 1) throw new RangeError(`Invalid number: ${n}`);\n}\n\n/** Easter Sunday — anonymous Gregorian algorithm (Meeus/Jones/Butcher). */\nfunction easterSunday(year) {\n  const a = year % 19;\n  const b = Math.floor(year / 100);\n  const c = year % 100;\n  const d = Math.floor(b / 4);\n  const e = b % 4;\n  const f = Math.floor((b + 8) / 25);\n  const g = Math.floor((b - f + 1) / 3);\n  const h = (19 * a + b - d - g + 15) % 30;\n  const i = Math.floor(c / 4);\n  const k = c % 4;\n  const l = (32 + 2 * e + 2 * i - h - k) % 7;\n  const m = Math.floor((a + 11 * h + 22 * l) / 451);\n  const month = Math.floor((h + l - 7 * m + 114) / 31);\n  const day = ((h + l - 7 * m + 114) % 31) + 1;\n  return Date.UTC(year, month - 1, day);\n}\n\n/**\n * Every public holiday in a year. A holiday on a Sunday makes the next day that is\n * not already a holiday a holiday too — usually the Monday, but the Tuesday when a\n * Sunday Christmas is followed by the Day of Goodwill. `extra` adds ad hoc days the\n * President declares (election days and the like).\n */\nfunction holidaysFor(year, extra = []) {\n  const easter = easterSunday(year);\n  const base = [\n    ...FIXED_HOLIDAYS.map((md) => parseIso(`${year}-${md}`)),\n    easter - 2 * DAY, // Good Friday\n    easter + DAY, // Family Day\n  ].sort((x, y) => x - y);\n\n  const days = new Set(base.map(toIso));\n  for (const t of base) {\n    if (weekday(t) !== 0) continue;\n    let next = t + DAY;\n    while (days.has(toIso(next))) next += DAY;\n    days.add(toIso(next));\n  }\n  for (const iso of extra) {\n    parseIso(iso);\n    days.add(iso);\n  }\n  return days;\n}\n\nfunction isHoliday(t, extra) {\n  return holidaysFor(new Date(t).getUTCFullYear(), extra).has(toIso(t));\n}\n\n/** Not a Saturday, Sunday or public holiday. */\nfunction isCourtDay(iso, extra = []) {\n  const t = parseIso(iso);\n  const wd = weekday(t);\n  return wd !== 0 && wd !== 6 && !isHoliday(t, extra);\n}\n\nfunction inFestivePeriod(t) {\n  const d = new Date(t);\n  const month = d.getUTCMonth() + 1;\n  const day = d.getUTCDate();\n  return (month === 12 && day >= 16) || (month === 1 && day <= 15);\n}\n\n/**\n * The date `n` court days after `iso`. The first day is excluded; only court days\n * count. With `festiveDiesNon`, 16 December to 15 January are not counted either.\n */\nfunction addCourtDays(iso, n, { extra = [], festiveDiesNon = false } = {}) {\n  let t = parseIso(iso);\n  requireCount(n);\n  let counted = 0;\n  while (counted < n) {\n    t += DAY;\n    if (!isCourtDay(toIso(t), extra)) continue;\n    if (festiveDiesNon && inFestivePeriod(t)) continue;\n    counted += 1;\n  }\n  return toIso(t);\n}\n\n/**\n * The date `n` calendar days after `iso` (Interpretation Act 33 of 1957, s4): when the\n * last day is a Sunday or public holiday, it moves to the next day that is neither.\n */\nfunction addCalendarDays(iso, n, extra = []) {\n  requireCount(n);\n  let t = parseIso(iso) + n * DAY;\n  while (weekday(t) === 0 || isHoliday(t, extra)) t += DAY;\n  return toIso(t);\n}\n\n/** The same date `n` years later; 29 February becomes 28 February in a common year. */\nfunction addYears(iso, n) {\n  const t = parseIso(iso);\n  requireCount(n);\n  const d = new Date(t);\n  const year = d.getUTCFullYear() + n;\n  const month = d.getUTCMonth();\n  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();\n  return toIso(Date.UTC(year, month, Math.min(d.getUTCDate(), lastDay)));\n}\n\nconst RULES = {\n  notice_of_intention_to_defend: {\n    type: 'court_days',\n    n: 10,\n    label: 'Notice of intention to defend — 10 court days after service',\n  },\n  prescription_debt: {\n    type: 'years',\n    n: 3,\n    label: 'Prescription of an ordinary debt — 3 years (Prescription Act 68 of 1969)',\n  },\n};\n\n/** Apply a rule ({ type, n, festiveDiesNon? }) to a trigger date. */\nfunction computeDeadline(rule, triggerIso, extra = []) {\n  switch (rule?.type) {\n    case 'court_days':\n      return addCourtDays(triggerIso, rule.n, { extra, festiveDiesNon: Boolean(rule.festiveDiesNon) });\n    case 'calendar_days':\n      return addCalendarDays(triggerIso, rule.n, extra);\n    case 'years':\n      return addYears(triggerIso, rule.n);\n    default:\n      throw new RangeError(`Unknown rule type: ${rule?.type}`);\n  }\n}\n\n\n// ---- Adapter: n8n items in, one deadline out ----\nconst input = $('When called').first().json;\nconst settings = Object.fromEntries($('Read settings').all().map(i => [i.json.Key, String(i.json.Value ?? '')]));\nconst extra = String(settings['Extra public holidays'] || '').split(/[;,\\s]+/).filter(Boolean);\nlet ai = {};\ntry { ai = JSON.parse($('Understand note').first().json.content[0].text); } catch {}\nconst rule = RULES[ai.ruleKey]\n  ?? (ai.courtDays ? { type: 'court_days', n: ai.courtDays, label: ai.courtDays + ' court days' }\n  : ai.calendarDays ? { type: 'calendar_days', n: ai.calendarDays, label: ai.calendarDays + ' calendar days' } : null);\nlet due = null;\ntry { if (rule && ai.triggerDate) due = computeDeadline(rule, ai.triggerDate, extra); } catch {}\nconst base = { agent: 'Deadlines', recipient: input.from, recipientName: 'the diary', attorneyNumber: input.from };\nif (!due) return [{ json: { ...base, ok: false } }];\nreturn [{ json: { ...base, ok: true, deadlineId: 'D-' + Date.now(), matterId: ai.matterId ?? '', event: ai.event ?? input.note,\n  triggerDate: ai.triggerDate, rule: rule.label, due,\n  draft: `Diary: matter ${ai.matterId ?? '?'} — ${ai.event ?? input.note} on ${ai.triggerDate} → due ${due} (${rule.label})` } }];\n"
+      }
+    },
+    {
+      "id": "70be5937-d5c8-970c-e877-78dbf1faecf8",
+      "name": "Understood?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "57b2ea42-a4e9-ddbf-6d75-6068bab5d26a",
+              "leftValue": "={{ $json.ok === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "14355037-2f67-7823-a6e2-0479b1b335fa",
+      "name": "Record deadline",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Deadlines"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "DeadlineID": "={{ $('Compute deadline').first().json.deadlineId }}",
+            "MatterID": "={{ $('Compute deadline').first().json.matterId }}",
+            "Description": "={{ $('Compute deadline').first().json.event }}",
+            "Trigger date": "={{ $('Compute deadline').first().json.triggerDate }}",
+            "Rule": "={{ $('Compute deadline').first().json.rule }}",
+            "Computed due date": "={{ $('Compute deadline').first().json.due }}",
+            "Confirmed": "N"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "0ca99ca0-e92e-bb40-40b7-95e45af7e1d6",
+      "name": "Ask for approval",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Request approval"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "e8ada374-b507-cd65-047d-bbaef0689534",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fddc454d-a657-ffe5-b019-f6a6a1621c44",
+              "leftValue": "={{ ['approved', 'edited'].includes($json.decision) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "595124e5-94e1-e340-94d8-ab4c2d28bd2d",
+      "name": "Add to diary",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "primary",
+          "cachedResultName": "Firm diary"
+        },
+        "start": "={{ $('Compute deadline').first().json.due }}T08:00:00",
+        "end": "={{ $('Compute deadline').first().json.due }}T09:00:00",
+        "useDefaultReminders": false,
+        "additionalFields": {
+          "summary": "=DEADLINE: {{ $('Compute deadline').first().json.event }} ({{ $('Compute deadline').first().json.matterId }})",
+          "description": "={{ $('Compute deadline').first().json.draft }}"
+        },
+        "remindersUi": {
+          "remindersValues": [
+            {
+              "method": "popup",
+              "minutes": 10080
+            },
+            {
+              "method": "popup",
+              "minutes": 4320
+            },
+            {
+              "method": "popup",
+              "minutes": 1440
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "ad31611b-7dfc-4627-c1d0-a3b2b0dc6580",
+      "name": "Mark confirmed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Deadlines"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "DeadlineID": "={{ $('Compute deadline').first().json.deadlineId }}",
+            "Confirmed": "Y",
+            "Calendar event ID": "={{ $json.id }}"
+          },
+          "matchingColumns": [
+            "DeadlineID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "06a14341-189b-4a3a-87b0-2863528adab0",
+      "name": "Ask attorney to rephrase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('When called').first().json.from, type: 'text', text: { body: String('I could not work out a date from that note. Please send: deadline: <event> on <date>, matter <number>.') } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "be5d0adc-c308-000d-dfab-c8d9c4bd1cc8",
+      "name": "Log unclear note",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1560,
+        180
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Deadlines",
+            "MatterID": "={{ '' }}",
+            "Action": "note_unclear",
+            "Detail": "={{ $('When called').first().json.note }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When called": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Understand note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Understand note": {
+      "main": [
+        [
+          {
+            "node": "Compute deadline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute deadline": {
+      "main": [
+        [
+          {
+            "node": "Understood?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Understood?": {
+      "main": [
+        [
+          {
+            "node": "Record deadline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask attorney to rephrase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record deadline": {
+      "main": [
+        [
+          {
+            "node": "Ask for approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Add to diary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to diary": {
+      "main": [
+        [
+          {
+            "node": "Mark confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask attorney to rephrase": {
+      "main": [
+        [
+          {
+            "node": "Log unclear note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

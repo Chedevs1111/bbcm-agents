@@ -1,0 +1,294 @@
+{
+  "name": "Edit timeouts",
+  "nodes": [
+    {
+      "id": "e36561ef-d1bb-e30f-e173-d0e67f75ddb3",
+      "name": "Every 10 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "a4d4655f-08f1-d0e1-001e-fe94c43759b5",
+      "name": "Read approvals",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Approvals"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "65b68bea-5184-50bb-f2d7-885665a62824",
+      "name": "Find lapsed edits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const now = new Date();\nreturn $('Read approvals').all()\n  .map(i => i.json)\n  .filter(r => r.Status === 'editing' && new Date(r['Edit until']) <= now)\n  .map(r => ({ json: r }));"
+      }
+    },
+    {
+      "id": "5dbafaf5-e719-fc97-a34a-9712f06ab50f",
+      "name": "Back to pending",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Approvals"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ApprovalID": "={{ $('Find lapsed edits').item.json.ApprovalID }}",
+            "Status": "pending",
+            "Edit until": ""
+          },
+          "matchingColumns": [
+            "ApprovalID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "4d2da9fe-d0e3-a6db-01e8-c8f751ef0b9a",
+      "name": "Ask attorney again",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Find lapsed edits').item.json['Decided by'], type: 'template', template: { name: 'approval_request', language: { code: 'en' }, components: [{ type: 'body', parameters: ([$('Find lapsed edits').item.json.Agent, $('Find lapsed edits').item.json.Recipient, $('Find lapsed edits').item.json['Draft text']]).map(t => ({ type: 'text', text: String(t).replace(/\\s+/g, ' ') })) }, ...(['approve', 'edit', 'reject'].map(a => $('Find lapsed edits').item.json.ApprovalID + '|' + a)).map((p, i) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: p }] }))] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "f38d192b-ee47-1e57-9029-e0a747ad83f3",
+      "name": "Log re-ask",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Edit timeouts",
+            "MatterID": "={{ $('Find lapsed edits').item.json.MatterID }}",
+            "Action": "approval_reasked",
+            "Detail": "={{ $('Find lapsed edits').item.json.ApprovalID }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 10 minutes": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Read approvals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read approvals": {
+      "main": [
+        [
+          {
+            "node": "Find lapsed edits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find lapsed edits": {
+      "main": [
+        [
+          {
+            "node": "Back to pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Back to pending": {
+      "main": [
+        [
+          {
+            "node": "Ask attorney again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask attorney again": {
+      "main": [
+        [
+          {
+            "node": "Log re-ask",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

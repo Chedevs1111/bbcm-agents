@@ -1,0 +1,758 @@
+{
+  "name": "Reception",
+  "nodes": [
+    {
+      "id": "95b56d12-5dda-db2a-3af8-7a45f9f71206",
+      "name": "When called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ce416af9-c8f1-1237-8167-67f82f812994",
+      "name": "Read matters",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Matters"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4a37d116-027b-1714-b30d-6726ff5fa7d1",
+      "name": "Read enquiries",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Enquiries"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "9357473c-a5cb-a7aa-96b6-5897c9ae3b7b",
+      "name": "Read diary",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "primary",
+          "cachedResultName": "Firm diary"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4ea5d856-80ec-e2d6-a38b-334bf43487e8",
+      "name": "Understand enquiry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1024, system: \"You are the reception assistant of a South African law firm. Read the WhatsApp message and reply with JSON only: {\\\"name\\\": string|null, \\\"matterType\\\": string, \\\"summary\\\": string, \\\"opposingParty\\\": string|null, \\\"wantsAdvice\\\": boolean, \\\"asksFees\\\": boolean, \\\"pickedSlot\\\": 1|2|3|null}. wantsAdvice is true when they ask what they should do legally. Never give legal advice.\", messages: [{ role: 'user', content: String($('When called').first().json.text) }] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM Anthropic"
+        }
+      }
+    },
+    {
+      "id": "48a6dbcd-b104-3fa7-ef23-60cd68dffda9",
+      "name": "Plan reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $('When called').first().json;\nconst settings = Object.fromEntries($('Read settings').all().map(i => [i.json.Key, String(i.json.Value ?? '')]));\nlet ai = {};\ntry { ai = JSON.parse($('Understand enquiry').first().json.content[0].text); } catch { ai = { summary: input.text, wantsAdvice: true }; }\nconst low = s => String(s ?? '').toLowerCase().trim();\nconst names = [low(ai.name), low(ai.opposingParty)].filter(Boolean);\nconst conflict = $('Read matters').all().some(i => names.some(n => n && (low(i.json['Client name']) === n || low(i.json['Opposing party']) === n)));\nconst firm = (settings['Firm name'] || 'our firm').replace(/\\.$/, '');\nconst attorneyNumber = (settings['Attorney WhatsApp numbers'] || '').split(/[;,]/)[0].split('=').pop().replace(/[^0-9]/g, '');\nconst offered = $('Read enquiries').all().map(i => i.json).filter(r => String(r.WhatsApp) === input.from && r.Status === 'slots offered').pop();\nif (offered && ai.pickedSlot) {\n  const slot = String(offered['Consultation slot']).split(' | ')[ai.pickedSlot - 1];\n  if (slot) {\n    const start = new Date(slot);\n    const end = new Date(start.getTime() + 60 * 60 * 1000);\n    return [{ json: { ...ai, from: input.from, conflict, booking: { start: start.toISOString(), end: end.toISOString() },\n      slots: slot, status: 'booked', agent: 'Reception', matterId: '', recipient: input.from, recipientName: ai.name || 'client', attorneyNumber,\n      draft: `This is the digital assistant of ${firm}. Your consultation is booked for ${start.toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}. Please bring your ID.` } }];\n  }\n}\nconst busy = $('Read diary').all().map(i => i.json).filter(e => e.start).map(e => [new Date(e.start.dateTime || e.start.date), new Date(e.end.dateTime || e.end.date)]);\n// $now is in the workflow's Africa/Johannesburg zone; the server clock may be UTC.\nconst times = String(settings['Consultation slot rules'] ?? '').match(/\\b\\d{1,2}:\\d{2}\\b/g) ?? ['09:00', '11:00', '14:00'];\nconst slots = [];\nlet day = $now.startOf('day');\nwhile (slots.length < 3) {\n  day = day.plus({ days: 1 });\n  if (day.weekday > 5) continue;\n  for (const time of times) {\n    const [hour, minute] = time.split(':').map(Number);\n    const start = day.set({ hour, minute }).toJSDate();\n    const end = new Date(start.getTime() + 60 * 60 * 1000);\n    if (!busy.some(([s, e]) => s < end && e > start) && slots.length < 3) slots.push(start);\n  }\n}\nconst fmt = d => d.toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });\nconst draft = `This is the digital assistant of ${firm}. Thank you${ai.name ? ', ' + ai.name : ''} — we can see you for a free consultation. Reply 1, 2 or 3: ` +\n  slots.map((s, i) => `${i + 1}) ${fmt(s)}`).join('; ') + '. An attorney will answer any legal questions at the consultation.';\nreturn [{ json: { ...ai, from: input.from, conflict, booking: null, slots: slots.map(s => s.toISOString()).join(' | '), status: 'slots offered',\n  agent: 'Reception', matterId: '', recipient: input.from, recipientName: ai.name || 'client', attorneyNumber, draft } }];"
+      }
+    },
+    {
+      "id": "5276d235-71c8-a454-ed96-fe06abcca456",
+      "name": "Record enquiry",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Enquiries"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Received at": "={{ $now.toISO() }}",
+            "Name": "={{ $('Plan reply').first().json.name }}",
+            "WhatsApp": "={{ $('Plan reply').first().json.from }}",
+            "Matter type": "={{ $('Plan reply').first().json.matterType }}",
+            "Summary": "={{ $('Plan reply').first().json.summary }}",
+            "Conflict result": "={{ $('Plan reply').first().json.conflict ? 'possible conflict' : 'clear' }}",
+            "Consultation slot": "={{ $('Plan reply').first().json.slots }}",
+            "Status": "={{ $('Plan reply').first().json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "1383eb44-fefc-6a90-dfee-7dbdf2683c9a",
+      "name": "Is booking?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1820,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "609ed13f-4401-5368-a0b2-a617e1a693f9",
+              "leftValue": "={{ $('Plan reply').first().json.booking !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6f84bad1-0e0e-32fa-85a4-14383da65d62",
+      "name": "Book consultation",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "primary",
+          "cachedResultName": "Firm diary"
+        },
+        "start": "={{ $('Plan reply').first().json.booking.start }}",
+        "end": "={{ $('Plan reply').first().json.booking.end }}",
+        "additionalFields": {
+          "summary": "=Consultation — {{ $('Plan reply').first().json.recipientName }}",
+          "description": "={{ $('Plan reply').first().json.summary }}"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "e842ffc3-2e96-4a6b-c3bb-bb2d88bf117c",
+      "name": "Needs approval?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1820,
+        360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2131419d-f456-7949-908a-81c60bb1b625",
+              "leftValue": "={{ $('Plan reply').first().json.conflict || $('Plan reply').first().json.wantsAdvice || $('Plan reply').first().json.asksFees }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "49307658-3c35-1cd2-df35-144a9a9c4ddc",
+      "name": "Auto-send on?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2080,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e8792c28-eb58-21ef-3c0a-b1d27b9e5c1f",
+              "leftValue": "={{ $('Read settings').all().find(i => i.json.Key === 'Auto-send booking confirmations')?.json.Value === 'Yes' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0ca99ca0-e92e-bb40-40b7-95e45af7e1d6",
+      "name": "Ask for approval",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Request approval"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "e8ada374-b507-cd65-047d-bbaef0689534",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fddc454d-a657-ffe5-b019-f6a6a1621c44",
+              "leftValue": "={{ ['approved', 'edited'].includes($json.decision) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "34a24c8d-f0d6-1f7a-5752-fd798318a9f3",
+      "name": "Send to client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Plan reply').first().json.from, type: 'text', text: { body: String($json.text) } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "ca9922fa-08de-bf7f-ac3e-51c11c3ae8b5",
+      "name": "Log approved reply",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Reception",
+            "MatterID": "={{ '' }}",
+            "Action": "reply_sent",
+            "Detail": "={{ 'approved reply' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "29d3a3a9-009d-6226-65ff-40f8687a5d2c",
+      "name": "Send to client (auto)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2340,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Plan reply').first().json.from, type: 'text', text: { body: String($('Plan reply').first().json.draft) } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "7e08fbd0-43ef-a384-2d29-d1203cc46632",
+      "name": "Log auto reply",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2600,
+        180
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Reception",
+            "MatterID": "={{ '' }}",
+            "Action": "reply_sent",
+            "Detail": "={{ 'automatic reply' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When called": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Read matters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read matters": {
+      "main": [
+        [
+          {
+            "node": "Read enquiries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read enquiries": {
+      "main": [
+        [
+          {
+            "node": "Read diary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read diary": {
+      "main": [
+        [
+          {
+            "node": "Understand enquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Understand enquiry": {
+      "main": [
+        [
+          {
+            "node": "Plan reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan reply": {
+      "main": [
+        [
+          {
+            "node": "Record enquiry",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is booking?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Needs approval?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is booking?": {
+      "main": [
+        [
+          {
+            "node": "Book consultation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs approval?": {
+      "main": [
+        [
+          {
+            "node": "Ask for approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Auto-send on?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-send on?": {
+      "main": [
+        [
+          {
+            "node": "Send to client (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Send to client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to client": {
+      "main": [
+        [
+          {
+            "node": "Log approved reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to client (auto)": {
+      "main": [
+        [
+          {
+            "node": "Log auto reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

@@ -1,0 +1,539 @@
+{
+  "name": "Billing month end",
+  "nodes": [
+    {
+      "id": "fbd074e6-6c25-9d89-7996-8f8f38551c00",
+      "name": "Daily at 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "52ade737-9edd-6235-58c3-9fd65ef5cb0b",
+      "name": "Last working day?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/**\n * South African deadline arithmetic.\n *\n * Self-contained on purpose — no imports — because the Deadlines and Billing\n * workflows inline this exact source into an n8n Code node. The code the tests\n * check is the code the agents run.\n *\n * Dates are ISO strings (YYYY-MM-DD) and all arithmetic is done in UTC, so no\n * timezone can shift a deadline by a day. Anything unparseable throws RangeError:\n * a deadline is never guessed.\n */\n\nconst DAY = 86_400_000;\n\n// Public Holidays Act 36 of 1994, fixed-date holidays (month-day).\nconst FIXED_HOLIDAYS = [\n  '01-01', '03-21', '04-27', '05-01', '06-16', '08-09', '09-24', '12-16', '12-25', '12-26',\n];\n\nfunction parseIso(iso) {\n  if (typeof iso !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(iso)) {\n    throw new RangeError(`Invalid date: ${iso}`);\n  }\n  const [y, m, d] = iso.split('-').map(Number);\n  const t = Date.UTC(y, m - 1, d);\n  const check = new Date(t);\n  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) {\n    throw new RangeError(`Invalid date: ${iso}`);\n  }\n  return t;\n}\n\nfunction toIso(t) {\n  return new Date(t).toISOString().slice(0, 10);\n}\n\nfunction weekday(t) {\n  return new Date(t).getUTCDay();\n}\n\nfunction requireCount(n) {\n  if (!Number.isInteger(n) || n < 1) throw new RangeError(`Invalid number: ${n}`);\n}\n\n/** Easter Sunday — anonymous Gregorian algorithm (Meeus/Jones/Butcher). */\nfunction easterSunday(year) {\n  const a = year % 19;\n  const b = Math.floor(year / 100);\n  const c = year % 100;\n  const d = Math.floor(b / 4);\n  const e = b % 4;\n  const f = Math.floor((b + 8) / 25);\n  const g = Math.floor((b - f + 1) / 3);\n  const h = (19 * a + b - d - g + 15) % 30;\n  const i = Math.floor(c / 4);\n  const k = c % 4;\n  const l = (32 + 2 * e + 2 * i - h - k) % 7;\n  const m = Math.floor((a + 11 * h + 22 * l) / 451);\n  const month = Math.floor((h + l - 7 * m + 114) / 31);\n  const day = ((h + l - 7 * m + 114) % 31) + 1;\n  return Date.UTC(year, month - 1, day);\n}\n\n/**\n * Every public holiday in a year. A holiday on a Sunday makes the next day that is\n * not already a holiday a holiday too — usually the Monday, but the Tuesday when a\n * Sunday Christmas is followed by the Day of Goodwill. `extra` adds ad hoc days the\n * President declares (election days and the like).\n */\nfunction holidaysFor(year, extra = []) {\n  const easter = easterSunday(year);\n  const base = [\n    ...FIXED_HOLIDAYS.map((md) => parseIso(`${year}-${md}`)),\n    easter - 2 * DAY, // Good Friday\n    easter + DAY, // Family Day\n  ].sort((x, y) => x - y);\n\n  const days = new Set(base.map(toIso));\n  for (const t of base) {\n    if (weekday(t) !== 0) continue;\n    let next = t + DAY;\n    while (days.has(toIso(next))) next += DAY;\n    days.add(toIso(next));\n  }\n  for (const iso of extra) {\n    parseIso(iso);\n    days.add(iso);\n  }\n  return days;\n}\n\nfunction isHoliday(t, extra) {\n  return holidaysFor(new Date(t).getUTCFullYear(), extra).has(toIso(t));\n}\n\n/** Not a Saturday, Sunday or public holiday. */\nfunction isCourtDay(iso, extra = []) {\n  const t = parseIso(iso);\n  const wd = weekday(t);\n  return wd !== 0 && wd !== 6 && !isHoliday(t, extra);\n}\n\nfunction inFestivePeriod(t) {\n  const d = new Date(t);\n  const month = d.getUTCMonth() + 1;\n  const day = d.getUTCDate();\n  return (month === 12 && day >= 16) || (month === 1 && day <= 15);\n}\n\n/**\n * The date `n` court days after `iso`. The first day is excluded; only court days\n * count. With `festiveDiesNon`, 16 December to 15 January are not counted either.\n */\nfunction addCourtDays(iso, n, { extra = [], festiveDiesNon = false } = {}) {\n  let t = parseIso(iso);\n  requireCount(n);\n  let counted = 0;\n  while (counted < n) {\n    t += DAY;\n    if (!isCourtDay(toIso(t), extra)) continue;\n    if (festiveDiesNon && inFestivePeriod(t)) continue;\n    counted += 1;\n  }\n  return toIso(t);\n}\n\n/**\n * The date `n` calendar days after `iso` (Interpretation Act 33 of 1957, s4): when the\n * last day is a Sunday or public holiday, it moves to the next day that is neither.\n */\nfunction addCalendarDays(iso, n, extra = []) {\n  requireCount(n);\n  let t = parseIso(iso) + n * DAY;\n  while (weekday(t) === 0 || isHoliday(t, extra)) t += DAY;\n  return toIso(t);\n}\n\n/** The same date `n` years later; 29 February becomes 28 February in a common year. */\nfunction addYears(iso, n) {\n  const t = parseIso(iso);\n  requireCount(n);\n  const d = new Date(t);\n  const year = d.getUTCFullYear() + n;\n  const month = d.getUTCMonth();\n  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();\n  return toIso(Date.UTC(year, month, Math.min(d.getUTCDate(), lastDay)));\n}\n\nconst RULES = {\n  notice_of_intention_to_defend: {\n    type: 'court_days',\n    n: 10,\n    label: 'Notice of intention to defend — 10 court days after service',\n  },\n  prescription_debt: {\n    type: 'years',\n    n: 3,\n    label: 'Prescription of an ordinary debt — 3 years (Prescription Act 68 of 1969)',\n  },\n};\n\n/** Apply a rule ({ type, n, festiveDiesNon? }) to a trigger date. */\nfunction computeDeadline(rule, triggerIso, extra = []) {\n  switch (rule?.type) {\n    case 'court_days':\n      return addCourtDays(triggerIso, rule.n, { extra, festiveDiesNon: Boolean(rule.festiveDiesNon) });\n    case 'calendar_days':\n      return addCalendarDays(triggerIso, rule.n, extra);\n    case 'years':\n      return addYears(triggerIso, rule.n);\n    default:\n      throw new RangeError(`Unknown rule type: ${rule?.type}`);\n  }\n}\n\n// ---- Adapter: continue only on the last working day of the month ----\nconst settings = Object.fromEntries($('Read settings').all().map(i => [i.json.Key, String(i.json.Value ?? '')]));\nconst extra = String(settings['Extra public holidays'] || '').split(/[;,\\s]+/).filter(Boolean);\nconst today = $now.toISODate();\nconst [y, m] = today.split('-').map(Number);\nconst lastDate = new Date(Date.UTC(y, m, 0)).getUTCDate();\nfor (let day = Number(today.slice(8)) + 1; day <= lastDate; day += 1) {\n  const iso = today.slice(0, 8) + String(day).padStart(2, '0');\n  if (isCourtDay(iso, extra)) return [];\n}\nreturn [{ json: { lastWorkingDay: today } }];\n"
+      }
+    },
+    {
+      "id": "4e0ae9aa-4964-0982-94e3-bcd9082f38e2",
+      "name": "Read time",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Time"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ce416af9-c8f1-1237-8167-67f82f812994",
+      "name": "Read matters",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Matters"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "64cb1ba2-577e-8aa6-571f-7cba506bfc3a",
+      "name": "Read invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "fee4e8f0-7aad-6e86-f314-32b5993c917c",
+      "name": "Draft fee notes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = Object.fromEntries($('Read settings').all().map(i => [i.json.Key, String(i.json.Value ?? '')]));\nconst rate = Number(String(settings['Hourly rate (R)'] || '').replace(/[^0-9.]/g, ''));\nif (!rate) return [];\nconst digits = s => String(s ?? '').replace(/[^0-9]/g, '');\nconst firm = (settings['Firm name'] || 'our firm').replace(/\\.$/, '');\nconst attorneyNumber = digits((settings['Attorney WhatsApp numbers'] || '').split(/[;,]/)[0].split('=').pop());\nconst rand = n => 'R' + n.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\nconst month = $now.toISODate().slice(0, 7);\nconst existing = new Set($('Read invoices').all().map(i => String(i.json['Invoice no.'])));\nconst matters = Object.fromEntries($('Read matters').all().map(i => [i.json.MatterID, i.json]));\nconst minutes = {};\nfor (const t of $('Read time').all().map(i => i.json)) {\n  const confirmed = Number(t['Confirmed minutes'] || 0);\n  if (!t.MatterID || !confirmed || !String(t.Date ?? '').startsWith(month)) continue;\n  minutes[t.MatterID] = (minutes[t.MatterID] ?? 0) + confirmed;\n}\nreturn Object.entries(minutes).flatMap(([matterId, mins]) => {\n  const invoiceNo = `INV-${month.replace('-', '')}-${matterId}`;\n  if (existing.has(invoiceNo)) return [];\n  const amount = Math.round((mins / 60) * rate * 100) / 100;\n  const client = matters[matterId] ?? {};\n  return [{ json: {\n    invoiceNo, matterId, amount, amountText: rand(amount), minutes: mins, firm, attorneyNumber,\n    agent: 'Billing', recipient: digits(client['Client WhatsApp']), recipientName: client['Client name'] ?? 'client',\n    draft: `Fee note ${invoiceNo} for matter ${matterId}: ${mins} min at R${rate}/h = ${rand(amount)}`,\n  } }];\n});"
+      }
+    },
+    {
+      "id": "071d5228-bb66-be3d-1cf1-f5d8132f0645",
+      "name": "Record fee note",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice no.": "={{ $('Draft fee notes').item.json.invoiceNo }}",
+            "MatterID": "={{ $('Draft fee notes').item.json.matterId }}",
+            "Amount": "={{ $('Draft fee notes').item.json.amount.toFixed(2) }}",
+            "Issued": "={{ $now.toISODate() }}",
+            "Due": "={{ $now.plus(30, 'days').toISODate() }}",
+            "Status": "draft",
+            "Reminders sent": "0"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "0ca99ca0-e92e-bb40-40b7-95e45af7e1d6",
+      "name": "Ask for approval",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1820,
+        180
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Request approval"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "e8ada374-b507-cd65-047d-bbaef0689534",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fddc454d-a657-ffe5-b019-f6a6a1621c44",
+              "leftValue": "={{ ['approved', 'edited'].includes($json.decision) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "34a24c8d-f0d6-1f7a-5752-fd798318a9f3",
+      "name": "Send to client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.recipient, type: 'template', template: { name: 'status_update', language: { code: 'en' }, components: [{ type: 'body', parameters: ([$json.recipientName, $json.firm, 'your fee note ' + $json.invoiceNo + ' for ' + $json.amountText + ' has been issued', 'please settle it within 30 days']).map(t => ({ type: 'text', text: String(t).replace(/\\s+/g, ' ') })) }] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "fd9440dd-0d20-c4f3-de5c-0b8b22c16cc4",
+      "name": "Log fee note",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Billing",
+            "MatterID": "={{ $('Approved?').item.json.matterId }}",
+            "Action": "fee_note_issued",
+            "Detail": "={{ $('Approved?').item.json.invoiceNo }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "ddacea2e-4399-5df5-d73e-12743d203d74",
+      "name": "Mark issued",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice no.": "={{ $('Approved?').item.json.invoiceNo }}",
+            "Status": "issued"
+          },
+          "matchingColumns": [
+            "Invoice no."
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily at 18:00": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Last working day?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last working day?": {
+      "main": [
+        [
+          {
+            "node": "Read time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read time": {
+      "main": [
+        [
+          {
+            "node": "Read matters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read matters": {
+      "main": [
+        [
+          {
+            "node": "Read invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoices": {
+      "main": [
+        [
+          {
+            "node": "Draft fee notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft fee notes": {
+      "main": [
+        [
+          {
+            "node": "Record fee note",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ask for approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Send to client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to client": {
+      "main": [
+        [
+          {
+            "node": "Log fee note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log fee note": {
+      "main": [
+        [
+          {
+            "node": "Mark issued",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

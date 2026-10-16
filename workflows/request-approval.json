@@ -1,0 +1,422 @@
+{
+  "name": "Request approval",
+  "nodes": [
+    {
+      "id": "95b56d12-5dda-db2a-3af8-7a45f9f71206",
+      "name": "When called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "0799f447-e4ed-84ea-84c7-eb075fbbed39",
+      "name": "Prepare approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $('When called').first().json;\nconst draft = String(input.draft ?? '').replace(/\\s*\\n\\s*/g, ' / ').slice(0, 900);\nreturn [{ json: { ...input, draft, approvalId: 'A-' + Date.now() } }];"
+      }
+    },
+    {
+      "id": "6808be1a-6a1c-2671-e96b-d9504b992ba8",
+      "name": "Record approval",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Approvals"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ApprovalID": "={{ $('Prepare approval').first().json.approvalId }}",
+            "Agent": "={{ $('Prepare approval').first().json.agent }}",
+            "MatterID": "={{ $('Prepare approval').first().json.matterId }}",
+            "Recipient": "={{ $('Prepare approval').first().json.recipientName }} ({{ $('Prepare approval').first().json.recipient }})",
+            "Draft text": "={{ $('Prepare approval').first().json.draft }}",
+            "Status": "pending",
+            "Resume URL": "={{ $execution.resumeUrl }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "1d487e80-ac5a-2e8a-9af5-1ac7e43479d0",
+      "name": "Ask attorney",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Prepare approval').first().json.attorneyNumber, type: 'template', template: { name: 'approval_request', language: { code: 'en' }, components: [{ type: 'body', parameters: ([$('Prepare approval').first().json.agent, $('Prepare approval').first().json.recipientName, $('Prepare approval').first().json.draft]).map(t => ({ type: 'text', text: String(t).replace(/\\s+/g, ' ') })) }, ...(['approve', 'edit', 'reject'].map(a => $('Prepare approval').first().json.approvalId + '|' + a)).map((p, i) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: p }] }))] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "8b611a8a-f7e5-fd43-43ea-37bb1924a647",
+      "name": "Log approval request",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Request approval",
+            "MatterID": "={{ $('Prepare approval').first().json.matterId }}",
+            "Action": "approval_requested",
+            "Detail": "={{ $('Prepare approval').first().json.approvalId }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "3d0d2d28-510c-8394-b198-88b343950077",
+      "name": "Wait for decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 24,
+        "resumeUnit": "hours",
+        "options": {}
+      }
+    },
+    {
+      "id": "cf94da92-c3ea-25c0-345f-b3e08b518087",
+      "name": "Decided?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f7dc9ac5-e6f0-3960-85dc-8a23976ca65a",
+              "leftValue": "={{ $json.body?.decision !== undefined }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3f8ea57c-2ca7-fb6d-730e-8704b1ddb80e",
+      "name": "Return decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { ...$('Prepare approval').first().json, decision: $json.body.decision, text: String($json.body.text ?? '') } }];"
+      }
+    },
+    {
+      "id": "310c38b2-38d0-c21b-aaf6-483785ffde8c",
+      "name": "Mark expired",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2080,
+        180
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Approvals"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ApprovalID": "={{ $('Prepare approval').first().json.approvalId }}",
+            "Status": "expired",
+            "Decided at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "ApprovalID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "1d117c2d-a87c-e044-dde8-37413427a050",
+      "name": "Return expired",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { ...$('Prepare approval').first().json, decision: 'expired', text: '' } }];"
+      }
+    }
+  ],
+  "connections": {
+    "When called": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Prepare approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare approval": {
+      "main": [
+        [
+          {
+            "node": "Record approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record approval": {
+      "main": [
+        [
+          {
+            "node": "Ask attorney",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask attorney": {
+      "main": [
+        [
+          {
+            "node": "Log approval request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log approval request": {
+      "main": [
+        [
+          {
+            "node": "Wait for decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for decision": {
+      "main": [
+        [
+          {
+            "node": "Decided?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decided?": {
+      "main": [
+        [
+          {
+            "node": "Return decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark expired": {
+      "main": [
+        [
+          {
+            "node": "Return expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

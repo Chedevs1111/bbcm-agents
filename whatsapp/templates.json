@@ -1,0 +1,94 @@
+[
+  {
+    "name": "document_reminder",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Hello {{1}}, this is the digital assistant of {{2}}. To keep your matter moving we still need: {{3}}. You can reply here with a photo or PDF. Reply STOP to stop these reminders.",
+        "example": { "body_text": [["Thandi", "Example Attorneys Inc.", "a certified copy of your ID"]] }
+      }
+    ]
+  },
+  {
+    "name": "status_update",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Hello {{1}}, this is the digital assistant of {{2}} with an update on your matter: {{3}}. Next step: {{4}}. Reply here if you have any questions.",
+        "example": { "body_text": [["Thandi", "Example Attorneys Inc.", "the summons was served on 12 October", "we wait 10 court days for a reply"]] }
+      }
+    ]
+  },
+  {
+    "name": "appointment_reminder",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Hello {{1}}, this is the digital assistant of {{2}}. A reminder of your consultation on {{3}} at {{4}}. Please bring your ID. Reply here to change the time.",
+        "example": { "body_text": [["Thandi", "Example Attorneys Inc.", "Tuesday 20 October", "10:00"]] }
+      }
+    ]
+  },
+  {
+    "name": "payment_reminder",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Hello {{1}}, this is the digital assistant of {{2}}. Invoice {{3}} for R{{4}} was due on {{5}}. If you have already paid, please reply and we will update our records.",
+        "example": { "body_text": [["Thandi", "Example Attorneys Inc.", "INV-0042", "4 500.00", "1 October 2026"]] }
+      }
+    ]
+  },
+  {
+    "name": "morning_brief",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Good morning {{1}}. Today: {{2}}. Deadlines in the next 7 days: {{3}}. Approvals waiting: {{4}}. New enquiries: {{5}}. Overdue invoices: R{{6}}.",
+        "example": { "body_text": [["Sarah", "2 consultations, 1 court date", "3", "4", "2", "12 300"]] }
+      }
+    ]
+  },
+  {
+    "name": "approval_request",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Approval needed. {{1}} wants to send this to {{2}}: \"{{3}}\"",
+        "example": { "body_text": [["Reception", "Thandi", "Thank you for your message. We can see you on Tuesday at 10:00."]] }
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          { "type": "QUICK_REPLY", "text": "Approve" },
+          { "type": "QUICK_REPLY", "text": "Edit" },
+          { "type": "QUICK_REPLY", "text": "Reject" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "system_alert",
+    "language": "en",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "BBCM Agents alert: {{1}} could not finish at step {{2}}. Nothing was sent to anyone. Reason: {{3}}. Please check the register.",
+        "example": { "body_text": [["Billing", "Draft fee note", "Google Sheets did not respond"]] }
+      }
+    ]
+  }
+]

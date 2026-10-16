@@ -1,0 +1,19 @@
+{
+  "name": "bbcm-agents",
+  "version": "1.0.0",
+  "description": "BBCM Agents — WhatsApp AI assistants for small South African law firms, built on n8n",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build-workflows.mjs",
+    "check:n8n": "node scripts/check-n8n.mjs"
+  },
+  "devDependencies": {
+    "n8n-core": "2.43.5",
+    "n8n-nodes-base": "2.43.5"
+  }
+}

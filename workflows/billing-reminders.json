@@ -1,0 +1,603 @@
+{
+  "name": "Billing reminders",
+  "nodes": [
+    {
+      "id": "2b2b5d91-f971-9817-1094-f3442cd3acc7",
+      "name": "Daily at 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "64cb1ba2-577e-8aa6-571f-7cba506bfc3a",
+      "name": "Read invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ce416af9-c8f1-1237-8167-67f82f812994",
+      "name": "Read matters",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Matters"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "747a2d8a-8517-8f89-b1a1-64ff64c786ea",
+      "name": "Overdue invoices",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = Object.fromEntries($('Read settings').all().map(i => [i.json.Key, String(i.json.Value ?? '')]));\nconst digits = s => String(s ?? '').replace(/[^0-9]/g, '');\nconst firm = (settings['Firm name'] || 'our firm').replace(/\\.$/, '');\nconst attorneyNumber = digits((settings['Attorney WhatsApp numbers'] || '').split(/[;,]/)[0].split('=').pop());\nconst amount = n => Number(n || 0).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\nconst matters = Object.fromEntries($('Read matters').all().map(i => [i.json.MatterID, i.json]));\nconst today = DateTime.fromISO($now.toISODate());\nreturn $('Read invoices').all().map(i => i.json)\n  .filter(inv => inv['Invoice no.'] && inv.Status === 'issued' && inv.Due)\n  .map(inv => ({ inv, days: Math.round(today.diff(DateTime.fromISO(String(inv.Due).slice(0, 10)), 'days').days) }))\n  .filter(({ inv, days }) => [7, 14, 30].includes(days) && Number(inv['Reminders sent'] || 0) < 3)\n  .map(({ inv, days }) => {\n    const client = matters[inv.MatterID] ?? {};\n    return { json: {\n      invoiceNo: inv['Invoice no.'], matterId: inv.MatterID, amount: amount(inv.Amount), days,\n      due: DateTime.fromISO(String(inv.Due).slice(0, 10)).toFormat('d LLLL yyyy'),\n      remindersSent: Number(inv['Reminders sent'] || 0), firm, attorneyNumber, agent: 'Billing',\n      recipient: digits(client['Client WhatsApp']), recipientName: client['Client name'] ?? 'client',\n      draft: `Payment reminder to ${client['Client name'] ?? 'client'}: invoice ${inv['Invoice no.']} for R${amount(inv.Amount)} is ${days} days overdue`,\n    } };\n  });"
+      }
+    },
+    {
+      "id": "49307658-3c35-1cd2-df35-144a9a9c4ddc",
+      "name": "Auto-send on?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e8792c28-eb58-21ef-3c0a-b1d27b9e5c1f",
+              "leftValue": "={{ $('Read settings').all().find(i => i.json.Key === 'Auto-send payment reminders')?.json.Value === 'Yes' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "29d3a3a9-009d-6226-65ff-40f8687a5d2c",
+      "name": "Send to client (auto)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.recipient, type: 'template', template: { name: 'payment_reminder', language: { code: 'en' }, components: [{ type: 'body', parameters: ([$json.recipientName, $json.firm, $json.invoiceNo, $json.amount, $json.due]).map(t => ({ type: 'text', text: String(t).replace(/\\s+/g, ' ') })) }] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "6b8ae824-5dd9-0479-3f85-d6af6a5937fc",
+      "name": "Log reminder (auto)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Billing",
+            "MatterID": "={{ $('Overdue invoices').item.json.matterId }}",
+            "Action": "payment_reminder",
+            "Detail": "={{ $('Overdue invoices').item.json.invoiceNo + ' (automatic)' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "4407a37e-459f-e880-1818-ccff06e21928",
+      "name": "Count reminder (auto)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice no.": "={{ $('Overdue invoices').item.json.invoiceNo }}",
+            "Reminders sent": "={{ $('Overdue invoices').item.json.remindersSent + 1 }}"
+          },
+          "matchingColumns": [
+            "Invoice no."
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "0ca99ca0-e92e-bb40-40b7-95e45af7e1d6",
+      "name": "Ask for approval",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1560,
+        180
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Request approval"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "e8ada374-b507-cd65-047d-bbaef0689534",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1820,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fddc454d-a657-ffe5-b019-f6a6a1621c44",
+              "leftValue": "={{ ['approved', 'edited'].includes($json.decision) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "34a24c8d-f0d6-1f7a-5752-fd798318a9f3",
+      "name": "Send to client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.recipient, type: 'template', template: { name: 'payment_reminder', language: { code: 'en' }, components: [{ type: 'body', parameters: ([$json.recipientName, $json.firm, $json.invoiceNo, $json.amount, $json.due]).map(t => ({ type: 'text', text: String(t).replace(/\\s+/g, ' ') })) }] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "e050b7d3-5826-a8d0-486e-b916a59e930a",
+      "name": "Log reminder",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Billing",
+            "MatterID": "={{ $('Approved?').item.json.matterId }}",
+            "Action": "payment_reminder",
+            "Detail": "={{ $('Approved?').item.json.invoiceNo + ' (approved)' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    },
+    {
+      "id": "566ab46b-c6c0-a3aa-453c-6f80341a2336",
+      "name": "Count reminder",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice no.": "={{ $('Approved?').item.json.invoiceNo }}",
+            "Reminders sent": "={{ $('Approved?').item.json.remindersSent + 1 }}"
+          },
+          "matchingColumns": [
+            "Invoice no."
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily at 08:00": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Read invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoices": {
+      "main": [
+        [
+          {
+            "node": "Read matters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read matters": {
+      "main": [
+        [
+          {
+            "node": "Overdue invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Overdue invoices": {
+      "main": [
+        [
+          {
+            "node": "Auto-send on?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-send on?": {
+      "main": [
+        [
+          {
+            "node": "Send to client (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to client (auto)": {
+      "main": [
+        [
+          {
+            "node": "Log reminder (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log reminder (auto)": {
+      "main": [
+        [
+          {
+            "node": "Count reminder (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Send to client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to client": {
+      "main": [
+        [
+          {
+            "node": "Log reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log reminder": {
+      "main": [
+        [
+          {
+            "node": "Count reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

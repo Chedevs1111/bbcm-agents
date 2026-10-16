@@ -1,0 +1,309 @@
+{
+  "name": "Billing time",
+  "nodes": [
+    {
+      "id": "9c3c18f4-0df3-4a89-2252-b5b0ae19ec72",
+      "name": "Weekdays at 17:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 17 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "2593cf28-7497-a6c0-a059-ae0c35381495",
+      "name": "Read log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "2d18cef6-6c8a-7379-4bf1-f0038ab7629c",
+      "name": "Suggest time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = Object.fromEntries($('Read settings').all().map(i => [i.json.Key, String(i.json.Value ?? '')]));\nconst attorneyNumber = (settings['Attorney WhatsApp numbers'] || '').split(/[;,]/)[0].split('=').pop().replace(/[^0-9]/g, '');\nconst today = $now.toISODate();\nconst minutesFor = action => (/document|deadline|diary/.test(action) ? 12 : 6);\nconst byMatter = {};\nfor (const r of $('Read log').all().map(i => i.json)) {\n  if (!r.MatterID || String(r.Timestamp ?? '').slice(0, 10) !== today) continue;\n  byMatter[r.MatterID] ??= { minutes: 0, actions: [] };\n  byMatter[r.MatterID].minutes += minutesFor(String(r.Action));\n  byMatter[r.MatterID].actions.push(r.Action);\n}\nconst entries = Object.entries(byMatter).map(([matterId, v]) => ({ matterId, minutes: v.minutes, activity: [...new Set(v.actions)].join(\", \") }));\nif (!entries.length) return [];\nreturn [{ json: {\n  agent: 'Billing', matterId: '', recipient: attorneyNumber, recipientName: 'the time sheet', attorneyNumber, entries,\n  draft: 'Time today: ' + entries.map(e => `${e.matterId} ${e.minutes} min (${e.activity})`).join('; '),\n} }];"
+      }
+    },
+    {
+      "id": "0ca99ca0-e92e-bb40-40b7-95e45af7e1d6",
+      "name": "Ask for approval",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Request approval"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "e8ada374-b507-cd65-047d-bbaef0689534",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fddc454d-a657-ffe5-b019-f6a6a1621c44",
+              "leftValue": "={{ ['approved', 'edited'].includes($json.decision) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3c21564a-8d6f-1fc6-3e6d-435921599409",
+      "name": "Approved entries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const decision = $('Ask for approval').first().json.decision;\nreturn $('Suggest time').first().json.entries.map(e => ({ json: {\n  ...e, confirmed: decision === 'approved' ? e.minutes : '',\n} }));"
+      }
+    },
+    {
+      "id": "4ee679f6-58b6-9fa9-8ff3-ec4424cce751",
+      "name": "Record time",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Time"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $now.toISODate() }}",
+            "MatterID": "={{ $json.matterId }}",
+            "Activity": "={{ $json.activity }}",
+            "Suggested minutes": "={{ $json.minutes }}",
+            "Confirmed minutes": "={{ $json.confirmed }}",
+            "Billed": "N"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekdays at 17:30": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Read log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read log": {
+      "main": [
+        [
+          {
+            "node": "Suggest time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Suggest time": {
+      "main": [
+        [
+          {
+            "node": "Ask for approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Approved entries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved entries": {
+      "main": [
+        [
+          {
+            "node": "Record time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}

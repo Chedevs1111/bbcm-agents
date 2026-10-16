@@ -1,0 +1,185 @@
+{
+  "name": "Error alert",
+  "nodes": [
+    {
+      "id": "64bd57aa-8397-cde6-1c14-dd0b126e74bb",
+      "name": "On error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "6c5ccc2f-425b-9655-918f-34dfd47ea8d1",
+      "name": "Read settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Settings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "68bb1fef-d388-4192-9a69-9f86a31d0390",
+      "name": "Attorney numbers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const raw = $('Read settings').all().find(i => i.json.Key === 'Attorney WhatsApp numbers')?.json.Value ?? '';\nreturn String(raw).split(/[;,]/)\n  .map(p => p.split('=').pop().replace(/[^0-9]/g, ''))\n  .filter(Boolean)\n  .map(number => ({ json: { number } }));"
+      }
+    },
+    {
+      "id": "b7b89405-c9ff-9cb4-0a70-453acfc6af83",
+      "name": "Alert attorneys",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v24.0/{{ $('Read settings').all().find(i => i.json.Key === 'WhatsApp phone number ID')?.json.Value }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.number, type: 'template', template: { name: 'system_alert', language: { code: 'en' }, components: [{ type: 'body', parameters: ([$('On error').first().json.workflow?.name ?? 'An agent', $('On error').first().json.execution?.lastNodeExecuted ?? 'unknown', String($('On error').first().json.execution?.error?.message ?? 'unknown error').slice(0, 200)]).map(t => ({ type: 'text', text: String(t).replace(/\\s+/g, ' ') })) }] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "BBCM WhatsApp"
+        }
+      }
+    },
+    {
+      "id": "4e39ada5-0807-b850-31b4-d42ecb607dea",
+      "name": "Log alert",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "BBCM Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now.toISO() }}",
+            "Agent": "Error alert",
+            "MatterID": "={{ '' }}",
+            "Action": "error_alert",
+            "Detail": "={{ $('On error').first().json.workflow?.name }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "BBCM Google"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On error": {
+      "main": [
+        [
+          {
+            "node": "Read settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read settings": {
+      "main": [
+        [
+          {
+            "node": "Attorney numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attorney numbers": {
+      "main": [
+        [
+          {
+            "node": "Alert attorneys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert attorneys": {
+      "main": [
+        [
+          {
+            "node": "Log alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  }
+}
