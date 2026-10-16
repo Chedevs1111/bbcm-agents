@@ -3,6 +3,7 @@
 **WhatsApp assistants that take the day-to-day admin off a small South African law firm —
 and never send anything a person did not approve.**
 
+**[See the agents and how they work →](https://chedevs1111.github.io/bbcm-agents/agents.html)** ·
 **[Open the savings calculator →](https://chedevs1111.github.io/bbcm-agents/)**
 
 ---

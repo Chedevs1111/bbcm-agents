@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BBCM Agents — The Agents</title>
+  <meta name="description" content="The five WhatsApp agents of BBCM Agents, each shown as its real n8n workflow.">
+  <style>
+    :root {
+      --navy: #0f1f3d;
+      --navy-2: #1b2f57;
+      --gold: #c9a227;
+      --gold-soft: #f3e7bf;
+      --paper: #f7f5ef;
+      --card: #ffffff;
+      --ink: #1d2433;
+      --muted: #5d6677;
+      --line: #e3ddcc;
+      --wa: #dcf8c6;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    a { color: var(--navy); }
+    header { background: var(--navy); color: #fff; border-bottom: 4px solid var(--gold); padding: 40px 16px 0; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+    .brand { color: var(--gold); letter-spacing: .14em; text-transform: uppercase; font-size: 13px; font-weight: 700; }
+    .top a { color: var(--gold-soft); font-size: 14px; }
+    h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(28px, 5vw, 42px); margin: 8px 0; }
+    header p { margin: 0 0 24px; color: #cfd6e4; max-width: 680px; }
+    nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    nav button {
+      font: inherit; font-size: 15px; white-space: nowrap; cursor: pointer;
+      background: transparent; color: #cfd6e4; border: 0; border-radius: 8px 8px 0 0; padding: 10px 16px;
+    }
+    nav button[aria-selected="true"] { background: var(--paper); color: var(--navy); font-weight: 700; }
+    nav button:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+    main { padding: 28px 16px 16px; }
+    .intro { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start; margin-bottom: 28px; }
+    h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 30px; margin: 0 0 6px; color: var(--navy); }
+    .lead { margin: 0 0 16px; color: var(--muted); }
+    dl { margin: 0; }
+    dl div { padding: 10px 0; border-top: 1px solid var(--line); }
+    dt { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--navy); }
+    dd { margin: 2px 0 0; }
+    .chat { background: #ece5dd; border-radius: 10px; padding: 16px; border: 1px solid var(--line); }
+    .chat h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .msg { max-width: 88%; padding: 8px 12px; border-radius: 8px; margin: 0 0 8px; font-size: 15px; box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+    .msg.in { background: #fff; }
+    .msg.out { background: var(--wa); margin-left: auto; }
+    .msg small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+    .buttons { display: flex; gap: 6px; margin-top: 8px; }
+    .buttons span { flex: 1; text-align: center; background: #fff; color: #128c7e; border-radius: 6px; padding: 4px; font-size: 14px; font-weight: 600; }
+    .flow { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 20px; margin-bottom: 20px; }
+    .flow h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 22px; margin: 0; color: var(--navy); }
+    .flow p { margin: 2px 0 12px; color: var(--muted); font-size: 15px; }
+    n8n-demo {
+      display: block;
+      --n8n-workflow-min-height: 480px;
+      --n8n-iframe-border-radius: 8px;
+      --n8n-overlay-background-color: var(--navy);
+      --n8n-interact-button-color: #fff;
+    }
+    .status { color: var(--muted); font-size: 14px; padding: 12px 0; }
+    footer { padding: 4px 16px 40px; }
+    .note { color: var(--muted); font-size: 14px; margin: 0; max-width: 820px; }
+    @media (max-width: 820px) {
+      .intro { grid-template-columns: 1fr; }
+      n8n-demo { --n8n-workflow-min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="top">
+        <div class="brand">BBCM Agents</div>
+        <a href="./">Savings calculator →</a>
+      </div>
+      <h1>Meet the agents</h1>
+      <p>Five assistants that work on the firm's WhatsApp. Below each one is its real workflow — the same one installed for the firm — and an example of what it sends. Click a flowchart to move around it.</p>
+      <nav role="tablist" aria-label="Agents" id="tabs"></nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap" id="panel" role="tabpanel"></div>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p class="note">Flowcharts are drawn by n8n's public workflow preview from the files in the
+        <a href="https://github.com/Chedevs1111/bbcm-agents/tree/main/workflows">project repository</a>.
+        The agents run in the firm's own n8n once its WhatsApp, Google and AI accounts are connected —
+        see the <a href="https://github.com/Chedevs1111/bbcm-agents/blob/main/docs/SETUP.md">setup guide</a>.
+        Example messages use made-up names.</p>
+    </div>
+  </footer>
+
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@n8n_io/n8n-demo-component@1.0.20/n8n-demo.bundled.js"></script>
+  <script type="module">
+    const RAW = 'https://raw.githubusercontent.com/Chedevs1111/bbcm-agents/main/workflows/';
+    const MASK = [
+      ['https://api.anthropic.com/v1/messages', 'the AI service'],
+      ['"anthropic-version"', '"api-version"'],
+      ["model: 'claude-sonnet-5-5'", "model: 'ai-model'"],
+      ['"BBCM Anthropic"', '"BBCM AI"'],
+    ];
+
+    const AGENTS = [
+      {
+        id: 'reception', name: 'Reception',
+        lead: 'Answers new enquiries 24/7 and books consultations.',
+        runs: 'Every WhatsApp from someone who is not yet a client.',
+        does: 'Reads the enquiry, checks for conflicts against existing matters, offers three free consultation slots from the diary and books the one the person picks.',
+        waits: 'Always for conflicts, legal questions and fee questions. Bookings too, unless the firm switches them to send on their own.',
+        chat: [
+          ['in', 'Client', 'Hi, I need help with a divorce. Can I see someone this week?'],
+          ['out', 'Digital assistant', 'This is the digital assistant of Example Attorneys Inc. Thank you, Thandi — we can see you for a free consultation. Reply 1, 2 or 3: 1) Mon, 19 Oct, 09:00; 2) Mon, 19 Oct, 11:00; 3) Mon, 19 Oct, 14:00. An attorney will answer any legal questions at the consultation.'],
+          ['in', 'Client', '2'],
+        ],
+        flows: [['reception', 'Reception', 'Read the message → conflict check → find free slots → approval (if needed) → reply → log.']],
+      },
+      {
+        id: 'client-updates', name: 'Client updates',
+        lead: 'Keeps clients informed and chases their documents.',
+        runs: 'Every message from a known client, and 09:00 on weekdays for reminders.',
+        does: 'Answers from the matter file, saves photos and PDFs clients send into the matter’s Drive folder, and chases outstanding documents every 3 days. After 4 reminders it stops and flags the client in the Morning brief.',
+        waits: 'Every answer about the matter. Routine receipts and reminders too, unless switched to send on their own.',
+        chat: [
+          ['out', 'Digital assistant', 'Hello Thandi, this is the digital assistant of Example Attorneys Inc. To keep your matter moving we still need: a certified copy of your ID. You can reply here with a photo or PDF. Reply STOP to stop these reminders.'],
+          ['in', 'Client', '📎 ID.pdf'],
+          ['out', 'Digital assistant', 'This is the digital assistant of Example Attorneys Inc. Thank you — we have received your document and filed it with your matter.'],
+        ],
+        flows: [
+          ['client-updates', 'Client updates', 'A client writes → find their matter → save a document or draft an answer → approval → reply → log.'],
+          ['document-reminders', 'Document reminders', 'Weekdays 09:00 → matters with outstanding items → remind every 3 days, at most 4 times → log.'],
+        ],
+      },
+      {
+        id: 'deadlines', name: 'Deadlines',
+        lead: 'Turns an attorney’s note into a confirmed diary entry.',
+        runs: 'When an attorney sends a note starting with “deadline:”.',
+        does: 'Works out the event, date and rule, counts court days around weekends and South African public holidays, and records the deadline. Once approved it goes into the diary with reminders 7, 3 and 1 days before.',
+        waits: 'Every deadline, without exception. It never moves or deletes a diary entry.',
+        chat: [
+          ['in', 'Attorney', 'deadline: summons served 3 Oct, matter 2026-014'],
+          ['out', 'Digital assistant', 'Approval needed. Deadlines wants to send this to the diary: “Diary: matter 2026-014 — summons served on 2026-10-03 → due 2026-10-16 (Notice of intention to defend — 10 court days after service)”', ['Approve', 'Edit', 'Reject']],
+        ],
+        flows: [['deadlines', 'Deadlines', 'Attorney’s note → read it → compute the date (court days, holidays) → approval → diary with reminders.']],
+      },
+      {
+        id: 'billing', name: 'Billing',
+        lead: 'Captures time, drafts fee notes and follows up payment.',
+        runs: '17:30 on weekdays, 18:00 on the last working day of the month, and 08:00 daily.',
+        does: 'Suggests each day’s time per matter from what the agents logged, drafts month-end fee notes from confirmed time at the firm’s hourly rate, and sends payment reminders 7, 14 and 30 days after the due date.',
+        waits: 'Every time batch and every fee note. Payment reminders too, unless switched to send on their own. It never moves money or records payments.',
+        chat: [
+          ['out', 'Digital assistant', 'Approval needed. Billing wants to send this to the time sheet: “Time today: 2026-014 12 min (document_reminder)”', ['Approve', 'Edit', 'Reject']],
+          ['out', 'Digital assistant', 'Hello Thandi, this is the digital assistant of Example Attorneys Inc. Invoice INV-202609-2026-014 for R4 500.00 was due on 30 September 2026. If you have already paid, please reply and we will update our records.'],
+        ],
+        flows: [
+          ['billing-time', 'Billing time', 'Weekdays 17:30 → today’s logged work per matter → one approval for the batch → time sheet.'],
+          ['billing-month-end', 'Billing month end', 'Last working day → confirmed time × hourly rate → draft fee note → approval → client told → marked issued.'],
+          ['billing-reminders', 'Billing reminders', 'Daily 08:00 → invoices 7, 14 or 30 days overdue → approval (or auto-send) → reminder → log.'],
+        ],
+      },
+      {
+        id: 'morning-brief', name: 'Morning brief',
+        lead: 'One message to each attorney before the day starts.',
+        runs: '07:30 on weekdays.',
+        does: 'Sends each attorney today’s diary, clients not responding, deadlines in the next 7 days, approvals waiting (and any that expired), new enquiries and the total overdue.',
+        waits: 'Nothing — it only goes to the firm’s own attorneys.',
+        chat: [
+          ['out', 'Digital assistant', 'Good morning Sarah. Today: 3 diary entries; Consultation: Thandi; 1 clients not responding (2026-009). Deadlines in the next 7 days: 1, next 2026-10-20 Plea due (2026-014). Approvals waiting: 2. New enquiries: 1. Overdue invoices: R5 700.00.'],
+        ],
+        flows: [['morning-brief', 'Morning brief', 'Weekdays 07:30 → read diary, deadlines, approvals, enquiries, invoices and matters → one brief per attorney → log.']],
+      },
+      {
+        id: 'behind-the-scenes', name: 'Behind the scenes',
+        lead: 'The shared parts every agent relies on.',
+        runs: 'Whenever a message arrives, an approval is needed, or something fails.',
+        does: 'One front door for all WhatsApp messages, the Approve / Edit / Reject loop, and a safety net that alerts the attorneys if any step fails.',
+        waits: 'Unanswered approvals expire after 24 hours and nothing is sent. Edits must arrive within 30 minutes.',
+        chat: [
+          ['out', 'Digital assistant', 'Approval needed. Reception wants to send this to Thandi: “Thank you for your message. We can see you on Tuesday at 10:00.”', ['Approve', 'Edit', 'Reject']],
+          ['in', 'Attorney', 'Edit'],
+          ['out', 'Digital assistant', 'Send the corrected text for approval A-1792165443123 within 30 minutes.'],
+        ],
+        flows: [
+          ['inbound-router', 'Inbound router', 'Every WhatsApp → STOP first → attorney deadline notes → approval replies → clients → new enquiries.'],
+          ['request-approval', 'Request approval', 'Record the draft → ask the attorney with three buttons → wait up to 24 hours → hand back the decision.'],
+          ['approval-replies', 'Approval replies', 'Button tap or corrected text → record the decision → resume the waiting agent.'],
+          ['edit-timeouts', 'Edit timeouts', 'Every 10 minutes → edits not received within 30 minutes go back to pending and the buttons are re-sent.'],
+          ['error-alert', 'Error alert', 'Any step fails → alert every attorney → nothing is sent to clients.'],
+        ],
+      },
+    ];
+
+    const tabs = document.getElementById('tabs');
+    const panel = document.getElementById('panel');
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+    for (const a of AGENTS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.id = `tab-${a.id}`;
+      b.textContent = a.name;
+      b.addEventListener('click', () => { location.hash = a.id; });
+      tabs.append(b);
+    }
+
+    function chatHtml(chat) {
+      return chat.map(([dir, who, text, buttons]) =>
+        `<div class="msg ${dir}"><small>${esc(who)}</small>${esc(text)}` +
+        (buttons ? `<div class="buttons">${buttons.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : '') +
+        '</div>').join('');
+    }
+
+    async function show(id) {
+      const agent = AGENTS.find((a) => a.id === id) ?? AGENTS[0];
+      for (const b of tabs.children) b.setAttribute('aria-selected', String(b.id === `tab-${agent.id}`));
+      panel.setAttribute('aria-labelledby', `tab-${agent.id}`);
+      panel.innerHTML = `
+        <section class="intro">
+          <div>
+            <h2>${esc(agent.name)}</h2>
+            <p class="lead">${esc(agent.lead)}</p>
+            <dl>
+              <div><dt>When it runs</dt><dd>${esc(agent.runs)}</dd></div>
+              <div><dt>What it does</dt><dd>${esc(agent.does)}</dd></div>
+              <div><dt>Waits for the attorney</dt><dd>${esc(agent.waits)}</dd></div>
+            </dl>
+          </div>
+          <div class="chat"><h3>Example on WhatsApp</h3>${chatHtml(agent.chat)}</div>
+        </section>
+        ${agent.flows.map(([file, title, line]) => `
+          <section class="flow">
+            <h3>${esc(title)}</h3>
+            <p>${esc(line)}</p>
+            <div class="status" data-file="${file}">Loading the workflow…</div>
+          </section>`).join('')}`;
+
+      for (const slot of panel.querySelectorAll('[data-file]')) {
+        try {
+          const res = await fetch(`${RAW}${slot.dataset.file}.json`);
+          if (!res.ok) throw new Error(res.status);
+          const demo = document.createElement('n8n-demo');
+          // Display only: client-facing pages name no AI vendor (the files in the repo are unchanged).
+          const text = MASK.reduce((t, [from, to]) => t.replaceAll(from, to), await res.text());
+          demo.setAttribute('workflow', text);
+          demo.setAttribute('clicktointeract', 'true');
+          demo.setAttribute('collapseformobile', 'false');
+          demo.setAttribute('hidecanvaserrors', 'true');
+          demo.setAttribute('theme', 'light');
+          slot.replaceWith(demo);
+        } catch {
+          slot.innerHTML = `The flowchart could not load. <a href="https://github.com/Chedevs1111/bbcm-agents/blob/main/workflows/${slot.dataset.file}.json">See the workflow file</a>.`;
+        }
+      }
+    }
+
+    window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+    show(location.hash.slice(1));
+  </script>
+</body>
+</html>
